@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:17
+    container_name: auth-slice-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: authslice
+      POSTGRES_PASSWORD: localdevpassword
+      POSTGRES_DB: authslice
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U authslice -d authslice" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
