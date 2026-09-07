@@ -594,7 +594,7 @@ The same row after its `expiresAt` was pushed into the past:
 And the same row after the correct code was accepted, with `consumedAt` populated — which
 is what makes a second submission of the same code fail:
 
-![Verification code consumed](evidence/08-code-consumed.png)
+![Verification code consumed](evidence/08-code-consumed.jpeg)
 
 
 **How I implemented it.**
