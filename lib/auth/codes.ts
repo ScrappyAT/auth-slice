@@ -88,3 +88,29 @@ export async function verifyCode(userId: string, submittedCode: string): Promise
 
   return { success: true };
 }
+
+// Enough time to actually receive the previous email before another can be
+// requested - not a security control by itself (rate limiting on the
+// resend endpoint is the ceiling on total volume), just a minimum gap
+// between sends.
+export const RESEND_COOLDOWN_SECONDS = 60;
+
+// Derived from the newest code's createdAt rather than a stored
+// `lastSentAt` column - one source of truth, per the project's decision
+// record. No column to keep in sync, nothing that can drift from reality.
+export async function getResendCooldownRemaining(userId: string): Promise<number> {
+  const newest = await prisma.verificationCode.findFirst({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+
+  if (!newest) {
+    return 0;
+  }
+
+  const elapsedMs = Date.now() - newest.createdAt.getTime();
+  const remainingMs = RESEND_COOLDOWN_SECONDS * 1000 - elapsedMs;
+
+  return remainingMs > 0 ? Math.ceil(remainingMs / 1000) : 0;
+}

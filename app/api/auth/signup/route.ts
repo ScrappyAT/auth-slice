@@ -5,6 +5,7 @@ import { signupSchema } from "@/lib/validation/schemas";
 import { hashPassword } from "@/lib/auth/password";
 import { createVerificationCode, CODE_EXPIRY_MINUTES } from "@/lib/auth/codes";
 import { sendEmail } from "@/lib/email";
+import { checkRateLimit, getClientIp, RATE_LIMITS } from "@/lib/rate-limit";
 
 // Every successful call to this endpoint gets this exact body and status,
 // whether this specific request is the one that inserted the row or the
@@ -29,6 +30,25 @@ export async function POST(request: Request) {
   }
 
   const { email, password, name } = parsed.data;
+
+  const { limit, windowSeconds } = RATE_LIMITS.signup;
+  const ip = getClientIp(request);
+
+  const ipCheck = await checkRateLimit(`signup:ip:${ip}`, limit, windowSeconds);
+  if (!ipCheck.allowed) {
+    return NextResponse.json(
+      { error: "Too many attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(ipCheck.retryAfterSeconds) } },
+    );
+  }
+
+  const emailCheck = await checkRateLimit(`signup:email:${email}`, limit, windowSeconds);
+  if (!emailCheck.allowed) {
+    return NextResponse.json(
+      { error: "Too many attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(emailCheck.retryAfterSeconds) } },
+    );
+  }
 
   // Hashed unconditionally, before any existence check, and there is no
   // existence check: this goes straight to the insert attempt. Checking

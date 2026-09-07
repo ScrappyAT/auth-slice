@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { signinSchema } from "@/lib/validation/schemas";
 import { verifyPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
+import { checkRateLimit, getClientIp, RATE_LIMITS } from "@/lib/rate-limit";
 
 const INVALID_CREDENTIALS_BODY = { error: "Invalid email or password" };
 const INVALID_CREDENTIALS_STATUS = 401;
@@ -31,6 +32,31 @@ export async function POST(request: Request) {
   }
 
   const { email, password } = parsed.data;
+
+  // Keyed on both IP and the submitted email: IP alone lets an attacker
+  // spread guesses across many accounts from one address and stay under
+  // any single-account limit, while email alone lets an attacker rotate
+  // IPs against one account and stay under any single-IP limit. Checking
+  // IP first means a request already blocked by IP never spends a hit
+  // against the email key too.
+  const { limit, windowSeconds } = RATE_LIMITS.signin;
+  const ip = getClientIp(request);
+
+  const ipCheck = await checkRateLimit(`signin:ip:${ip}`, limit, windowSeconds);
+  if (!ipCheck.allowed) {
+    return NextResponse.json(
+      { error: "Too many attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(ipCheck.retryAfterSeconds) } },
+    );
+  }
+
+  const emailCheck = await checkRateLimit(`signin:email:${email}`, limit, windowSeconds);
+  if (!emailCheck.allowed) {
+    return NextResponse.json(
+      { error: "Too many attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(emailCheck.retryAfterSeconds) } },
+    );
+  }
 
   const user = await prisma.user.findUnique({ where: { email } });
 

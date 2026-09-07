@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { resetRequestSchema } from "@/lib/validation/schemas";
 import { createResetToken, RESET_TOKEN_EXPIRY_MINUTES } from "@/lib/auth/tokens";
 import { sendEmail } from "@/lib/email";
+import { checkRateLimit, getClientIp, RATE_LIMITS } from "@/lib/rate-limit";
 
 // Identical to every caller regardless of whether the email has an
 // account - the same anti-enumeration reasoning as signup. Nothing here
@@ -25,6 +26,25 @@ export async function POST(request: Request) {
   }
 
   const { email } = parsed.data;
+
+  const { limit, windowSeconds } = RATE_LIMITS.forgotPassword;
+  const ip = getClientIp(request);
+
+  const ipCheck = await checkRateLimit(`forgot-password:ip:${ip}`, limit, windowSeconds);
+  if (!ipCheck.allowed) {
+    return NextResponse.json(
+      { error: "Too many attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(ipCheck.retryAfterSeconds) } },
+    );
+  }
+
+  const emailCheck = await checkRateLimit(`forgot-password:email:${email}`, limit, windowSeconds);
+  if (!emailCheck.allowed) {
+    return NextResponse.json(
+      { error: "Too many attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(emailCheck.retryAfterSeconds) } },
+    );
+  }
 
   const user = await prisma.user.findUnique({ where: { email } });
 

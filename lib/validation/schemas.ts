@@ -60,8 +60,13 @@ export const verifyCodeSchema = z.object({
   code: z.string().length(6, "Code must be 6 digits").regex(/^\d{6}$/, "Code must be 6 digits"),
 });
 
+export const resendCodeSchema = z.object({
+  email,
+});
+
 export type SignupInput = z.infer<typeof signupSchema>;
 export type SigninInput = z.infer<typeof signinSchema>;
 export type ResetRequestInput = z.infer<typeof resetRequestSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type VerifyCodeInput = z.infer<typeof verifyCodeSchema>;
+export type ResendCodeInput = z.infer<typeof resendCodeSchema>;
