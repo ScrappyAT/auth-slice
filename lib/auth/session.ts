@@ -1,5 +1,6 @@
 import { randomBytes, createHash } from "crypto";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 
 export const SESSION_COOKIE_NAME = "session";
@@ -63,4 +64,18 @@ export async function destroySession(): Promise<void> {
   }
 
   cookieStore.delete(SESSION_COOKIE_NAME);
+}
+
+// The real gate. This does a database lookup on every call - middleware
+// running on the edge runtime cannot do this (Prisma does not run there
+// without an adapter this project doesn't use), so it could only ever
+// check whether a session cookie is present, not whether the session
+// behind it is still valid. This is why the check happens here, in a
+// Server Component / Route Handler, where Prisma works normally.
+export async function requireSession() {
+  const session = await getSession();
+  if (!session) {
+    redirect("/signin");
+  }
+  return session.user;
 }
