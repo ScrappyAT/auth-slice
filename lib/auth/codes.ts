@@ -23,3 +23,68 @@ export async function createVerificationCode(userId: string) {
     data: { userId, code, expiresAt },
   });
 }
+
+// A six-digit code is one million possibilities - trivially brute-forceable
+// with no other defence. Expiry bounds the window; this caps how many
+// guesses can be spent inside that window. 5 wrong guesses is enough for a
+// genuine typo or two, nowhere near enough to make a dent in 1,000,000.
+export const MAX_VERIFICATION_ATTEMPTS = 5;
+
+type VerifyCodeResult = { success: true } | { success: false };
+
+export async function verifyCode(userId: string, submittedCode: string): Promise<VerifyCodeResult> {
+  // Expiry, consumption state, and the attempts cap are all conditions on
+  // the read itself, not checked afterward in application code: a code
+  // that is expired, already consumed, or has used up its attempts simply
+  // does not come back here, and every one of those cases is handled by
+  // the same "no eligible code" branch below.
+  const codeRow = await prisma.verificationCode.findFirst({
+    where: {
+      userId,
+      consumedAt: null,
+      expiresAt: { gt: new Date() },
+      attempts: { lt: MAX_VERIFICATION_ATTEMPTS },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!codeRow) {
+    return { success: false };
+  }
+
+  if (codeRow.code !== submittedCode) {
+    // `increment` compiles to a single `UPDATE ... SET attempts = attempts
+    // + 1`, not a read-modify-write from application code. That matters
+    // here too: two wrong guesses arriving at the same instant both still
+    // land, instead of one read-then-write clobbering the other's count
+    // and quietly widening the brute-force budget.
+    await prisma.verificationCode.update({
+      where: { id: codeRow.id },
+      data: { attempts: { increment: 1 } },
+    });
+    return { success: false };
+  }
+
+  // Single-use consumption via atomic conditional update - the same
+  // pattern as the password reset token: updateMany with a where clause
+  // that only matches a still-unconsumed, still-unexpired row, then check
+  // the affected row count. Never read-then-write: if two requests both
+  // reach here with the correct code before either writes, only one
+  // update actually matches (consumedAt is still null at the moment it
+  // runs) and returns count 1; the other matches zero rows and fails.
+  const { count } = await prisma.verificationCode.updateMany({
+    where: { id: codeRow.id, consumedAt: null, expiresAt: { gt: new Date() } },
+    data: { consumedAt: new Date() },
+  });
+
+  if (count === 0) {
+    return { success: false };
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { emailVerifiedAt: new Date() },
+  });
+
+  return { success: true };
+}
