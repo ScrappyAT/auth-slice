@@ -4,6 +4,10 @@ A security-focused authentication system built from first principles with Next.j
 
 The project explores what happens behind authentication libraries: account creation, email verification, password hashing, sessions, password resets, validation and protections against common authentication abuse.
 
+## Preview
+
+![Authentication sign-in interface](./evidence/authentication-ui.png)
+
 ## What It Does
 
 - User signup with email and password
